@@ -92,7 +92,16 @@ def send_response(command, body_lines, conn, txn_id):
                     encoded_line = f"{key}=$".encode() + raw_bytes
                 except ValueError:
                     # If bad hex, fall back to regular encoding
-                    encoded_line = line.encode()
+                    print("bad hex")
+                    encoded_line = line.encode(errors='ignore')
+            elif value.startswith('§'):
+                hex_str = value[1:]  # Remove the '§'
+                try:
+                    raw_bytes = bytes(int(hex_str[i:i+2], 16) for i in range(0, len(hex_str), 2))
+                    encoded_line = f"{key}=".encode() + raw_bytes
+                except ValueError:
+                    # If bad hex, fall back to regular encoding
+                    encoded_line = line.encode(errors='ignore')
             else:
                 encoded_line = line.encode()
         else:
@@ -102,13 +111,17 @@ def send_response(command, body_lines, conn, txn_id):
 
     body = b'\t'.join(encoded_lines) + b'\x00'
 
-    if command in {"@dir", "sele", "auth", "pers", "fget", "fdup", "+who"}:
+    if command in {"@dir", "sele", "auth", "pers", "fget", "+who", "news", "usld", "gsea", "snap", "opup", "gdel", "fbst", "rrup", "slst", "gpsc", "fupd", "sviw", "sdta", "gset"} and txn_id not in {b'ew8', b'fnd'}:
         packet = build_packet(command, PacketType.PING, txn_id, body)
         conn.sendall(packet)
         return
     elif command == "@tic":
         return
-    elif command == "news" and txn_id == b'new8':
+    elif command == "news" and txn_id == b'ew8':
+        packet = build_packet(command, PacketType.UNK_1, txn_id, body)
+        conn.sendall(packet)
+        return
+    elif command == "gqwk":
         packet = build_packet(command, PacketType.UNK_1, txn_id, body)
         conn.sendall(packet)
         return
@@ -182,7 +195,12 @@ def handle_packet(parsed, conn):
                 hex_value = value.replace(b'$', b'').hex()
                 data[key.decode()] = '$' + hex_value
             else:
-                data[key.decode()] = value.decode()
+                try:
+                    data[key.decode()] = value.decode()
+                except UnicodeDecodeError:
+                    hex_value = value.hex()
+                    data[key.decode()] = '§' + hex_value
+                    
 
     command = parsed['command']
     print(f"[REQ] Command: {command}, TXN: {txn_id.hex()}, Data: {data}")
@@ -221,7 +239,7 @@ def handle_packet(parsed, conn):
         send_response(command, response, conn, txn_id)
         return
     elif command == "news":
-        response = [
+        response1 = [
             "MIN_TIME_SPENT_SYNCYING_TIME=1",
             "MAX_TIME_SPENT_SYNCYING_TIME=30",
             "MAX_TIME_TO_WAIT_FOR_START_TIME=30",
@@ -240,7 +258,9 @@ def handle_packet(parsed, conn):
             "TIME_BETWEEN_ROAD_RULES_UPLOADS=1",
             "TIME_BETWEEN_ROAD_RULES_DOWNLOADS=900",
             "TIME_BEFORE_RETRY_AFTER_FAILED_BUDDY_UPLOAD=600",
-            "TIME_BETWEEN_OFFLINE_PROGRESSION_UPLOAD=600",
+            "TIME_BETWEEN_OFFLINE_PROGRESSION_UPLOAD=600"
+        ]
+        response2 = [
             "ROAD_RULES_RESET_DATE=\"2007.10.11 18:00:00\"",
             "USE_GLOBAL_ROAD_RULE_SCORES=0",
             "CAR_OLD_ROAD_RULES_TAGFIELD=RULES,RULES1,RULES2,RULES3,RULES4,RULES5,RULES6,RULES7,RULES8,RULES9,RULES10,RULES11,RULES12,RULES13,RULES14,RULES15,RULES16",
@@ -260,7 +280,7 @@ def handle_packet(parsed, conn):
             "QOS_LOBBY=127.0.0.1",
             "QOS_PORT=17582",
             "PROFANE_STRING=@/&!",
-            "FEVER_CARRIERS=FritzBraun,EricWimp,Matazone,NutKC,FlufflesDaBunny,Flinnster,Molen,LingBot,DDangerous,Technocrat",
+            "FEVER_CARRIERS=FritzBraun,EricWimp,Matazone,NutKC,FlufflesDaBunny,Flinnster,Molen,LingBot,DDangerous,Technocrat,The%20PLB,Chipper1977,Bazmobile,CustardKid,The%20Wibbler,AlexBowser,Blanks%2082,Maxreboh,Jackhamma,MajorMajorMajor,Riskjockey,ChiefAV,Charnjit,Zietto,BurntOutDave,Belj,Cupster,Krisis1969,OrangeGopher,Phaigoman,Drastic%20Surgeon,Tom%20Underdown,Discodoktor,Cargando,Gaztech,PompeyPaul,TheSoldierBoy,louben17,Colonel%20Gambas,EliteBeatAgent,Uaintdown,SynergisticFX,InfamousGRouse,EAPR,EAPR%2002,Jga360%20JP2,EAJproduct",
             "NEWS_DATE=\"2008.6.11 21:00:00\"",
             "NEWS_URL=http://gos.ea.com/easo/editorial/common/2008/news/news.jsp?lang=%25s&from=%25s&game=Burnout&platform=xbl2",
             "USE_ETOKEN=1",
@@ -280,7 +300,35 @@ def handle_packet(parsed, conn):
             "CHAL_SKEY=chalscores",
             "TELE_DISABLE=AD,AF,AG,AI,AL,AM,AN,AO,AQ,AR,AS,AW,AX,AZ,BA,BB,BD,BF,BH,BI,BJ,BM,BN,BO,BR,BS,BT,BV,BW,BY,BZ,CC,CD,CF,CG,CI,CK,CL,CM,CN,CO,CR,CU,CV,CX,DJ,DM,DO,DZ,EC,EG,EH,ER,ET,FJ,FK,FM,FO,GA,GD,GE,GF,GG,GH,GI,GL,GM,GN,GP,GQ,GS,GT,GU,GW,GY,HM,HN,HT,ID,IL,IM,IN,IO,IQ,IR,IS,JE,JM,JO,KE,KG,KH,KI,KM,KN,KP,KR,KW,KY,KZ,LA,LB,LC,LI,LK,LR,LS,LY,MA,MC,MD,ME,MG,MH,ML,MM,MN,MO,MP,MQ,MR,MS,MU,MV,MW,MY,MZ,NA,NC,NE,NF,NG,NI,NP,NR,NU,OM,PA,PE,PF,PG,PH,PK,PM,PN,PS,PW,PY,QA,RE,RS,RW,SA,SB,SC,SD,SG,SH,SJ,SL,SM,SN,SO,SR,ST,SV,SY,SZ,TC,TD,TF,TG,TH,TJ,TK,TL,TM,TN,TO,TT,TV,TZ,UA,UG,UM,UY,UZ,VA,VC,VE,VG,VN,VU,WF,WS,YE,YT,ZM,ZW,ZZ"
         ]
-        send_response(command, response, conn, txn_id)
+        response3 = [
+            "I=1022",
+            f"N={players[host].get('gamertag')}",
+            f"M={players[host].get('gamertag')}",
+            "F=U",
+            f"A={players[host].get('address')}",
+            "P=1",
+            "S=,,",
+            "G=0",
+            "AT=",
+            "CL=511",
+            "LV=1049601",
+            "MD=0",
+            f"LA={players[host].get('address')}",
+            "HW=0",
+            "RP=0",
+            f"MA={players[host].get('macaddress')}",
+            "LO=enUS",
+            "X=",
+            "US=0",
+            "PRES=1",
+            "VER=7",
+            "C=,,,,,,,,"
+        ]
+        if data["NAME"] == "client.cfg":
+            send_response(command, response2, conn, txn_id)
+        else:
+            send_response(command, response1, conn, b'ew8')
+            send_response("+who", response3, conn, txn_id)
         return
     elif command == "sele":
         response = [
@@ -370,7 +418,7 @@ def handle_packet(parsed, conn):
             "C=,,,,,,,,"
         ]
         send_response(command, response, conn, txn_id)
-        send_response('+who', response2, conn, txn_id)
+        #send_response('+who', response2, conn, txn_id)
         return
     elif command == "fget":
         response = [
@@ -381,7 +429,208 @@ def handle_packet(parsed, conn):
     elif command == "fupd":
         friends = data["ADD"]
         players[host]['friends'] = friends
+        send_response(command, friends, conn, txn_id)
+        return
+    elif command == "usld":
+        response = [
+            "SPM_EA=1",
+            "SPM_PART=0",
+            "IMGATE=0",
+            f"UID={players[host].get('puid')}",
+            "QMSG0=\"Wanna play?\"",
+            "QMSG1=\"I rule!\"",
+            "QMSG2=Doh!",
+            "QMSG3=\"Mmmm... doughnuts.\"",
+            "QMSG4=\"What time is it?\"",
+            "QMSG5=\"The truth is out of style.\""
+        ]
+        send_response(command, response, conn, txn_id)
+        return
+    elif command in {"gsea", "snap", "rrup", "opup", "fbst", "gdel", "rrgt", "rrlc"}:
         send_response(command, [], conn, txn_id)
+        return
+    elif command == "slst":
+        response = [
+            "VIEW13=Rival2,\"Rival 2 information\",",
+            "VIEW14=Rival3,\"Rival 3 information\",",
+            "VIEW6=LastEvent1,\"Recent Event 1 Details\",",
+            "VIEW15=Rival4,\"Rival 4 information\",",
+            "VIEW7=LastEvent2,\"Recent Event 2 Details\",",
+            "VIEW5=PlayerStatS,\"Player Stats Summary\",",
+            "VIEW0=lobby,\"Online Lobby Stats View\",",
+            "VIEW22=DriverDetai,\"Driver details\",",
+            "VIEW16=Rival5,\"Rival 5 information\",",
+            "VIEW8=LastEvent3,\"Recent Event 3 Details\",",
+            "VIEW2=RoadRules,\"Road Rules\",",
+            "VIEW17=Rival6,\"Rival 6 information\",",
+            "VIEW9=LastEvent4,\"Recent Event 4 Details\",",
+            "VIEW18=Rival7,\"Rival 7 information\",",
+            "VIEW10=LastEvent5,\"Recent Event 5 Details\",",
+            "VIEW19=Rival8,\"Rival 8 information\",",
+            "VIEW23=RiderDetail,\"Rider details\",",
+            "VIEW20=Rival9,\"Rival 9 information\",",
+            "VIEW25=Friends,\"Friends List\",",
+            "VIEW11=OfflineProg,\"Offline Progression\",",
+            "VIEW4=NightBikeRR,\"Night Bike Road Rules\",",
+            "VIEW26=PNetworkSta,\"Paradise Network Stats\",",
+            "VIEW3=DayBikeRRs,\"Day Bike Road Rules\",",
+            "VIEW1=DLC,\"DLC Lobby Stats View\",",
+            "VIEW24=IsldDetails,\"Island details\",",
+            "VIEW21=Rival10,\"Rival 10 information\",",
+            "VIEW12=Rival1,\"Rival 1 information\",",
+            "COUNT=27"
+        ]
+        send_response(command, response, conn, txn_id)
+        return
+    elif command == "gpsc":
+        players[host]['PLATPARAMS'] = data['USERPARAMS']
+        players[host]['PARAMS'] = data['PARAMS']
+        
+        response1 = [
+            "I=1022",
+            f"N={players[host].get('gamertag')}",
+            f"M={players[host].get('gamertag')}",
+            "F=U",
+            f"A={players[host].get('address')}",
+            "P=1",
+            "S=,,",
+            "G=76",
+            "AT=",
+            "CL=511",
+            "LV=1049601",
+            "MD=0",
+            f"LA={players[host].get('address')}",
+            "HW=0",
+            "RP=0",
+            f"MA={players[host].get('macaddress')}",
+            "LO=enUS",
+            "X=",
+            "US=0",
+            "PRES=1",
+            "VER=7",
+            "C=,,,,,,,,"
+        ]
+        response2 = [
+            "IDENT=76",
+            "WHEN=2024.7.2-8:35:16",
+            f"NAME={players[host].get('gamertag')}",
+            "HOST=@brobot1023",
+            "ROOM=0",
+            "MAXSIZE=9",
+            "MINSIZE=2",
+            "COUNT=2",
+            "PRIV=0",
+            "CUSTFLAGS=413345024",
+            "SYSFLAGS=64",
+            "EVID=0",
+            "EVGID=0",
+            "NUMPART=1",
+            "SEED=76",
+            f"GPSHOST={players[host].get('gamertag')}",
+            "GPSREGION=0",
+            "GAMEMODE=0",
+            "GAMEPORT=1000",
+            "VOIPPORT=0",
+            "WHENC=2024.7.2-8:35:16",
+            "SESS=None",
+            "PLATPARAMS=None",
+            "PARTSIZE0=9",
+            f"PARAMS={data['PARAMS']}",
+            "PARTPARAMS0=",
+            "OPPO0=@brobot1023",
+            "OPPART0=0",
+            "OPFLAG0=0",
+            "PRES0=0",
+            "OPID0=1023",
+            "ADDR0=73.121.221.18",
+            "LADDR0=127.0.0.3",
+            "MADDR0=",
+            f"OPPARAM0={players[host].get('PLATPARAMS')}",
+            f"OPPO1={players[host].get('gamertag')}",
+            "OPPART1=0",
+            "OPFLAG1=413345024",
+            "PRES1=0",
+            "OPID1=1022",
+            f"ADDR1={players[host].get('address')}",
+            f"LADDR1={players[host].get('address')}",
+            f"MADDR1={players[host].get('macaddress')}",
+            f"OPPARAM1={players[host].get('PLATPARAMS')}"
+        ]
+        send_response(command, [], conn, txn_id)
+        send_response("+who", response1, conn, txn_id)
+        send_response("+mgm", response2, conn, txn_id)
+        return
+    elif command == "sviw":
+        response = [
+            "N=13",
+            "NAMES=0,3,4,5,6,7,8,9,10,11,12,13,14",
+            "DESCS=1,1,1,1,1,1,1,1,1,1,1,1,1",
+            "PARAMS=2,2,2,2,2,2,2,2,2,2,2,2,2",
+            "TYPES=~num,~num,~num,~num,~num,~rnk,~num,~num,~num,~num,~num,~num",
+            "SYMS=TOTCOM,a,0,TAKEDNS,RIVALS,ACHIEV,FBCHAL,RANK,WINS,unk7,unk8,unk9,unk10,unk11,unk12",
+            "SS=83"
+        ]
+        send_response(command, response, conn, txn_id)
+        return
+    elif command == "sdta":
+        response = [
+            "SLOT=0",
+			"STATS=1,2,3,4,5,6,7,8,9,10,11,12,13"
+        ]
+        send_response(command, response, conn, txn_id)
+        return
+    elif command == "gqwk":
+        send_response(command, [], conn, b'fnd')
+        return
+    elif command == "gset":
+        players[host]['SESS'] = data['SESS']
+        response = [
+            "IDENT=76",
+            "WHEN=2024.7.2-8:35:16",
+            f"NAME={players[host].get('gamertag')}",
+            "HOST=@brobot1023",
+            "ROOM=0",
+            "MAXSIZE=9",
+            "MINSIZE=2",
+            "COUNT=2",
+            "PRIV=0",
+            "CUSTFLAGS=413345024",
+            "SYSFLAGS=64",
+            "EVID=0",
+            "EVGID=0",
+            "NUMPART=1",
+            "SEED=76",
+            f"GPSHOST={players[host].get('gamertag')}",
+            "GPSREGION=0",
+            "GAMEMODE=0",
+            "GAMEPORT=1000",
+            "VOIPPORT=0",
+            "WHENC=2024.7.2-8:35:16",
+            f"SESS={players[host].get('SESS')}",
+            f"PLATPARAMS={players[host].get('PLATPARAMS')}",
+            "PARTSIZE0=9",
+            f"PARAMS={players[host].get('PARAMS')}",
+            "PARTPARAMS0=",
+            "OPPO0=@brobot1023",
+            "OPPART0=0",
+            "OPFLAG0=0",
+            "PRES0=0",
+            "OPID0=1023",
+            "ADDR0=73.121.221.18",
+            "LADDR0=127.0.0.3",
+            "MADDR0=",
+            f"OPPARAM0={players[host].get('PLATPARAMS')}",
+            f"OPPO1={players[host].get('gamertag')}",
+            "OPPART1=0",
+            "OPFLAG1=413345024",
+            "PRES1=0",
+            "OPID1=1022",
+            f"ADDR1={players[host].get('address')}",
+            f"LADDR1={players[host].get('address')}",
+            f"MADDR1={players[host].get('macaddress')}",
+            f"OPPARAM1={players[host].get('USERPARAMS')}"
+        ]
+        send_response(command, response, conn, txn_id)
         return
         
 
